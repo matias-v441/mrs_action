@@ -1,0 +1,14 @@
+#Request 
+mrs_msgs/Path path
+---
+#Result
+bool success
+string message
+---
+#Feedback
+uint8 STATE_IDLE=0       # drone is not controlled
+uint8 STATE_REQUESTING=1 # service request is sent
+uint8 STATE_WAITING=2    # drone is controlled by something else
+uint8 STATE_FLYING=3     # the goal is executing. 
+
+uint8 state

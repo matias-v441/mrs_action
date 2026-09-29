@@ -1,0 +1,4 @@
+/**/action_manager:
+  ros__parameters:
+    mode: "path" # goto | path | reference 
+    update_interval: 1.

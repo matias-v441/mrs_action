@@ -1,0 +1,35 @@
+# ROS 2 / colcon build artifacts
+build/
+install/
+log/
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake-build-*/
+compile_commands.json
+
+# C++ build outputs
+*.o
+*.so
+*.a
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*~
+
+# clangd
+.cache/
+
+# OS
+.DS_Store
