@@ -1,93 +1,197 @@
-# mrs_actions
+# mrs_action
 
+ROS 2 action servers for the [MRS UAV System](https://github.com/ctu-mrs/mrs_uav_system).
 
+The MRS control stack takes flight commands as services (`control_manager/goto`,
+`trajectory_generation/path`, `control_manager/reference`). A service call returns
+as soon as the command is accepted, so the caller cannot tell when the flight
+finishes. `mrs_action` wraps each of these services in a ROS 2 action. The action
+calls the service, watches the tracker status, and finishes only after the UAV has
+flown to the goal.
 
-## Getting started
+## Packages
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+| Package           | Contents                                                              |
+|-------------------|-----------------------------------------------------------------------|
+| `mrs_action_msgs` | Action definitions: `Goto`, `Path`, `ReferenceStamped`                 |
+| `mrs_action`      | The action manager node (C++, plus a Python version), launch file, config, tests |
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+## Features
 
-## Add your files
+- **Three action types**, one per node instance, chosen by the `mode` parameter:
 
-- [ ] [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-- [ ] [Add files using the command line](https://docs.gitlab.com/ee/gitlab-basics/add-file.html#add-a-file-using-the-command-line) or push an existing Git repository with the following command:
+  | Mode        | Action                                | Wrapped service                                      |
+  |-------------|---------------------------------------|------------------------------------------------------|
+  | `goto`      | `mrs_action_msgs/action/Goto`             | `control_manager/goto` (`mrs_msgs/srv/Vec4`)         |
+  | `path`      | `mrs_action_msgs/action/Path`             | `trajectory_generation/path` (`mrs_msgs/srv/PathSrv`) |
+  | `reference` | `mrs_action_msgs/action/ReferenceStamped` | `control_manager/reference` (`mrs_msgs/srv/ReferenceStampedSrv`) |
 
+- **Completion tracking.** The node subscribes to `control_manager/diagnostics` and
+  uses `tracker_status.have_goal` to see when the flight starts and ends.
+- **Waits for a busy UAV.** If the UAV is already flying to another goal when the
+  action starts, the node waits until that flight ends before sending the request.
+- **One goal at a time.** A new goal is rejected while another one is running.
+- **Feedback** reports the current state of every goal (see below).
+- **Failure reporting.** If the service rejects the request, the action is aborted
+  and its result carries the service's message.
+
+### States and feedback
+
+Each goal goes through the states below. Every state change is published as
+feedback in the `state` field.
+
+| Value | State        | Meaning                                                        |
+|-------|--------------|----------------------------------------------------------------|
+| 0     | `IDLE`       | No goal is running                                             |
+| 1     | `REQUESTING` | The service request has been sent; waiting for the flight to start |
+| 2     | `WAITING`    | The UAV is busy with another goal; waiting for it to finish    |
+| 3     | `FLYING`     | The UAV is flying to this goal                                 |
+
+A typical goal goes `REQUESTING → FLYING`, and the action succeeds when the tracker
+reports that it no longer has a goal. If the UAV was busy, the goal goes
+`WAITING → REQUESTING → FLYING`.
+
+### Result
+
+| Field     | Type     | Description                                                   |
+|-----------|----------|---------------------------------------------------------------|
+| `success` | `bool`   | `true` if the flight finished                                 |
+| `message` | `string` | `"finished flying"`, `"canceled"`, or the service's error message |
+
+### Cancelling
+
+A goal can be canceled only in the `IDLE` or `WAITING` state. After a request has
+been sent to the UAV (`REQUESTING` or `FLYING`), cancel requests are rejected.
+
+## Building
+
+Requirements:
+
+- ROS 2 with `rclcpp`, `rclcpp_action` and `rclpy`
+- `mrs_msgs` from the MRS UAV System (ROS 2)
+- A C++20 compiler
+
+Clone the repository into the `src` folder of a colcon workspace, then build:
+
+```bash
+cd ~/ros2_ws
+colcon build --packages-up-to mrs_action
+source install/setup.bash
 ```
-cd existing_repo
-git remote add origin https://mrs.fel.cvut.cz/gitlab/frantisek.nekovar/mrs_actions.git
-git branch -M master
-git push -uf origin master
-```
-
-## Integrate with your tools
-
-- [ ] [Set up project integrations](https://mrs.fel.cvut.cz/gitlab/frantisek.nekovar/mrs_actions/-/settings/integrations)
-
-## Collaborate with your team
-
-- [ ] [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
-- [ ] [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-- [ ] [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-- [ ] [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
-- [ ] [Set auto-merge](https://docs.gitlab.com/ee/user/project/merge_requests/merge_when_pipeline_succeeds.html)
-
-## Test and Deploy
-
-Use the built-in continuous integration in GitLab.
-
-- [ ] [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/index.html)
-- [ ] [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
-- [ ] [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-- [ ] [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
-- [ ] [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
-
-***
-
-# Editing this README
-
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
-
-## Suggestions for a good README
-
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
-
-## Name
-Choose a self-explaining name for your project.
-
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
-
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
-
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
-
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
 
 ## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+### Launching
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+```bash
+ros2 launch mrs_action action_manager.launch.py uav_name:=uav1
+```
 
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
+Launch arguments:
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
+| Argument        | Default                                    | Description                                   |
+|-----------------|--------------------------------------------|-----------------------------------------------|
+| `uav_name`      | `$UAV_NAME`, or `uav1` if that is not set  | Namespace of the node                         |
+| `custom_config` | `share/mrs_action/params/mrs_action_defaults.yaml` | Parameter file. A relative path is resolved against the current directory. |
 
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
+The action server is at `/<uav_name>/action_manager/<mode>`, for example
+`/uav1/action_manager/path`.
 
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
+### Parameters
 
-## License
-For open source projects, say how it is licensed.
+| Parameter         | Type   | Default | Description                                                    |
+|-------------------|--------|---------|----------------------------------------------------------------|
+| `mode`            | string | none (required) | `goto`, `path` or `reference`                       |
+| `update_interval` | float  | `0.1` in the node, `1.0` in the default config | Seconds between state machine updates |
 
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+Example config:
+
+```yaml
+/**/action_manager:
+  ros__parameters:
+    mode: "goto"
+    update_interval: 0.5
+```
+
+```bash
+ros2 launch mrs_action action_manager.launch.py custom_config:=my_config.yaml
+```
+
+To serve more than one action type for the same UAV, launch one node per mode.
+
+### Sending goals
+
+**Goto** (`goal` is `[x, y, z, heading]`):
+
+```bash
+ros2 action send_goal --feedback /uav1/action_manager/goto \
+  mrs_action_msgs/action/Goto "{goal: [10.0, 0.0, 3.0, 0.0]}"
+```
+
+**Path** (`path` is an `mrs_msgs/Path`):
+
+```bash
+ros2 action send_goal --feedback /uav1/action_manager/path \
+  mrs_action_msgs/action/Path \
+  "{path: {fly_now: true, points: [
+     {position: {x: 5.0, y: 0.0, z: 3.0}, heading: 0.0},
+     {position: {x: 5.0, y: 5.0, z: 3.0}, heading: 0.0}]}}"
+```
+
+Set `fly_now: true`. Otherwise the trajectory is loaded but not started, and the
+action never gets past `REQUESTING`.
+
+**Reference** (`header` + `mrs_msgs/Reference`):
+
+```bash
+ros2 action send_goal --feedback /uav1/action_manager/reference \
+  mrs_action_msgs/action/ReferenceStamped \
+  "{header: {frame_id: ''}, reference: {position: {x: 0.0, y: 0.0, z: 3.0}, heading: 0.0}}"
+```
+
+### Python implementation
+
+`mrs_action/action_manager_node.py` is a Python version of the same node. The launch
+file uses the C++ executable (`mrs_action_server`). To use the Python node, set
+`executable="action_manager_node.py"` in
+[action_manager.launch.py](mrs_action/launch/action_manager.launch.py). The Python
+node ignores `update_interval` and always updates once per second.
+
+## Tests
+
+The tests are launch tests. Each one starts the action manager in `goto` mode
+together with a mock control manager
+([fake_goto_node.py](mrs_action/test/mock/fake_goto_node.py)), which serves
+`control_manager/goto` and publishes fake diagnostics. They do not need a simulator
+or the MRS UAV System running.
+
+| Test                                               | Scenario                                                          |
+|----------------------------------------------------|-------------------------------------------------------------------|
+| [basic.py](mrs_action/test/basic.py)               | The UAV is busy at start; the goal waits, then flies and succeeds |
+| [short_flight.py](mrs_action/test/short_flight.py) | The flight is shorter than `update_interval`, and is still detected |
+| [delay_report.py](mrs_action/test/delay_report.py) | The tracker reports the flight 1 s after the service responds     |
+| [multiple_goals.py](mrs_action/test/multiple_goals.py) | A second goal is rejected while the first runs; later goals run one after another |
+| [fail.py](mrs_action/test/fail.py)                 | The service rejects the request; the action is aborted            |
+
+Tests are built only when `ENABLE_TESTS` is on:
+
+```bash
+cd ~/ros2_ws
+colcon build --packages-up-to mrs_action --cmake-args -DENABLE_TESTS=ON
+source install/setup.bash
+
+colcon test --packages-select mrs_action --event-handlers console_direct+
+colcon test-result --verbose
+```
+
+Each test runs in an isolated ROS domain (`run_test_isolated.py`), so the tests do
+not interfere with each other or with other ROS nodes on the network.
+
+To run a single test, filter by name:
+
+```bash
+colcon test --packages-select mrs_action --ctest-args -R multiple_goals
+```
+
+The gtest unit tests in `test/unit/` are currently disabled in
+[CMakeLists.txt](mrs_action/CMakeLists.txt).
